@@ -5,7 +5,7 @@ from random import Random
 from sklearn.base import BaseEstimator
 
 from rils.node import Node, NodeArcCos, NodeArcSin, NodeConstant, NodeCos, NodeDivide, NodeExp, NodeLn, NodeMax, NodeMin, NodeMinus, NodeMultiply, NodeSin, NodeSqr, NodeSqrt,NodeVariable, NodePlus
-from solution import Solution
+from rils.solution import Solution
 import warnings
 warnings.filterwarnings("ignore")
 
