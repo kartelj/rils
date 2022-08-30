@@ -2,13 +2,13 @@ from tabnanny import check
 from pmlb import fetch_data
 from sklearn.model_selection import train_test_split
 import utils
-from rils import RILS
+from rils import RILSRegressor
 from os import listdir, stat
 import sys
 from sklearn.utils.estimator_checks import check_estimator
 import numpy as np
 
-#check_estimator(RILS())
+#check_estimator(RILSRegressor())
 
 if len(sys.argv)!=8:
     print("Usage: <working part or -1> <parts >=1> <random seed> <max time (s)> <max fit calls> <size penalty> <noise level>")
@@ -61,7 +61,7 @@ for i in range(len(ground_truth_regr_datasets)):
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=seed)
     y_train = utils.noisefy(y_train, noise_level, seed)
     
-    rils = RILS(max_fit_calls,max_seconds, random_state = seed, complexity_penalty=complexity_penalty)
+    rils = RILSRegressor(max_fit_calls,max_seconds, random_state = seed, complexity_penalty=complexity_penalty)
     rils.fit(X_train, y_train)
     report_string = rils.fit_report_string(X_train, y_train)
     rils_R2 = ""
