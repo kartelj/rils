@@ -85,6 +85,15 @@ class RILS(BaseEstimator):
             if best_fitness[0]<self.error_tolerance and best_fitness[1] < self.error_tolerance:
                 break
         self.model = best_solution
+    
+    def predict(self, X):
+        Node.reset_node_value_cache()
+        return self.model.evaluate_all(X, False)
+
+    def size(self):
+        if self.model is not None:
+            return self.model.size()
+        return math.inf
 
     def fit_report_string(self, X, y):
         if self.model==None:
@@ -92,10 +101,6 @@ class RILS(BaseEstimator):
         fitness = self.model.fitness(X,y, False)
         return "maxTime={0}\tmaxFitCalls={1}\tseed={2}\tsizePenalty={3}\tR2={4:.7f}\tRMSE={5:.7f}\tsize={6}\tsec={7:.1f}\tmainIt={8}\tlsIt={9}\tfitCalls={10}\texpr={11}".format(
             self.max_seconds,self.max_fit_calls,self.random_state,self.complexity_penalty, 1-fitness[0], fitness[1], fitness[2], self.time_elapsed,self.main_it, self.ls_it,Solution.fit_calls, self.model)
-
-    def predict(self, X):
-        Node.reset_node_value_cache()
-        return self.model.evaluate_all(X, False)
 
     def preturb(self, solution:Solution,varCnt):
         shaked_solution = copy.deepcopy(solution)
