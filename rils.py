@@ -6,7 +6,6 @@ from sklearn.base import BaseEstimator
 from abc import abstractmethod
 import copy
 from math import acos, asin, atan, ceil, cos, exp, floor, inf, log, sin, sqrt, tan
-import utils
 from sympy import *
 from sympy.core.numbers import ImaginaryUnit
 from sympy.core.symbol import Symbol
@@ -16,7 +15,6 @@ from statistics import mean
 from math import nan, sqrt
 from statistics import mean
 from numpy.random import RandomState
-
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -175,7 +173,7 @@ class NodeVariable(Node):
         return X[self.index]
 
     def __str__(self):
-        return "v"+str(self.index)
+        return "X_"+str(self.index)
 
 class NodePlus(Node):
     def __init__(self):
@@ -691,14 +689,17 @@ class Solution:
         for fact in self.factors:
             fyp = fact.evaluate_all(X, cache)
             for i in range(len(fyp)):
+                #try:
                 yp[i]+=fyp[i]
+                #except:
+                #    pass # do nothing
         return yp
 
     def fitness(self, X, y, cache=True):
         try:
             Solution.fit_calls+=1
             yp = self.evaluate_all(X, cache) 
-            return (1-utils.R2(y, yp), utils.RMSE(y, yp), self.size())
+            return (1-R2(y, yp), RMSE(y, yp), self.size())
         except Exception as e:
             #print(e)
             Solution.math_error_count+=1
@@ -879,7 +880,7 @@ class Solution:
                 if str(sympy_node)=="e":
                     return NodeConstant(e)
                 try:
-                    index = int(str(sympy_node).replace("v",""))
+                    index = int(str(sympy_node).replace("X_",""))
                     return NodeVariable(index)
                 except Exception as ex:
                     print(sympy_node)
