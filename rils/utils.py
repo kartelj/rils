@@ -1,5 +1,5 @@
-from math import exp, log, nan, sqrt
-from statistics import mean, stdev
+from math import nan, sqrt
+from statistics import mean
 from numpy.random import RandomState
 
 # described in Apendix 4 of paper Contemporary Symbolic Regression Methods and their Relative Performance

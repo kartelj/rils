@@ -3,16 +3,14 @@ from pmlb import regression_dataset_names
 from pmlb import fetch_data
 from sklearn.model_selection import train_test_split
 from sklearn import linear_model
-from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 import utils
 from sklearn import svm
 from rils import RILS
-from sklearn.preprocessing import OneHotEncoder
 
 #print(regression_dataset_names)
 
-pmlb_cache = "../../pmlb/datasets"
+pmlb_cache = "../pmlb/datasets"
 time = 100
 seed = 12345
 test_perc = 0.25

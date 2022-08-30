@@ -1,7 +1,6 @@
 import copy
 from math import e, inf
 import math
-import time
 
 from node import NodeAbs, NodeArcCos, NodeArcSin, NodeArcTan, NodeCeil, NodeConstant, NodeCos, NodeExp, NodeFloor, NodeLn, NodeMax, NodeMin, NodeMultiply, NodePlus, NodePow, NodeSgn, NodeSin, NodeTan, NodeVariable
 import utils
