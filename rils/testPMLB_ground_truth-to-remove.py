@@ -6,6 +6,7 @@ from rils import RILS
 from os import listdir, stat
 import sys
 from sklearn.utils.estimator_checks import check_estimator
+import numpy as np
 
 #check_estimator(RILS())
 
@@ -24,6 +25,7 @@ max_fit_calls = int(sys.argv[5])
 complexity_penalty = float(sys.argv[6])
 noise_level = float(sys.argv[7])
 test_size = 0.25
+label="target"
 
 pmlb_cache = "../pmlb/datasets"
 excluded_feynman = ["feynman_I_26_2", "feynman_I_30_5", "feynman_test_10"] # this are using arcsin or arcos
@@ -43,8 +45,18 @@ for i in range(len(ground_truth_regr_datasets)):
     if i%parts!=part:
         continue
     dataset = ground_truth_regr_datasets[i]
+    #true_model = get_sym_model(dataset)
     print("Doing "+dataset)
-    X, y = fetch_data(dataset, return_X_y=True,  local_cache_dir=pmlb_cache)
+   
+    input_data = fetch_data(dataset,  local_cache_dir=pmlb_cache)
+        
+    feature_names = [x for x in input_data.columns.values if x != label]
+    feature_names = np.array(feature_names)
+
+    X = input_data.drop(label, axis=1).values.astype(float)
+    y = input_data[label].values
+
+    assert(X.shape[1] == feature_names.shape[0])
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=seed)
     y_train = utils.noisefy(y_train, noise_level, seed)

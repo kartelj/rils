@@ -4,7 +4,7 @@ import math
 from random import Random
 from sklearn.base import BaseEstimator
 
-from node import Node, NodeArcCos, NodeArcSin, NodeConstant, NodeCos, NodeDivide, NodeExp, NodeLn, NodeMax, NodeMin, NodeMinus, NodeMultiply, NodeSin, NodeSqr, NodeSqrt,NodeVariable, NodePlus
+from rils.node import Node, NodeArcCos, NodeArcSin, NodeConstant, NodeCos, NodeDivide, NodeExp, NodeLn, NodeMax, NodeMin, NodeMinus, NodeMultiply, NodeSin, NodeSqr, NodeSqrt,NodeVariable, NodePlus
 from solution import Solution
 import warnings
 warnings.filterwarnings("ignore")
@@ -21,6 +21,7 @@ class RILS(BaseEstimator):
 
     def __reset(self):
         self.model = None
+        self.varNames = None
         self.ls_it = 0
         self.main_it = 0
         self.last_improved_it = 0
@@ -94,6 +95,12 @@ class RILS(BaseEstimator):
         if self.model is not None:
             return self.model.size()
         return math.inf
+
+    def modelString(self):
+        if self.model is not None:
+            # replacing v0, v1, ... with real variable names
+            return str(self.model)
+        return ""
 
     def fit_report_string(self, X, y):
         if self.model==None:
