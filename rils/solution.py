@@ -2,8 +2,8 @@ import copy
 from math import e, inf
 import math
 
-from node import NodeAbs, NodeArcCos, NodeArcSin, NodeArcTan, NodeCeil, NodeConstant, NodeCos, NodeExp, NodeFloor, NodeLn, NodeMax, NodeMin, NodeMultiply, NodePlus, NodePow, NodeSgn, NodeSin, NodeTan, NodeVariable
-import utils
+from .node import NodeAbs, NodeArcCos, NodeArcSin, NodeArcTan, NodeCeil, NodeConstant, NodeCos, NodeExp, NodeFloor, NodeLn, NodeMax, NodeMin, NodeMultiply, NodePlus, NodePow, NodeSgn, NodeSin, NodeTan, NodeVariable
+from .utils import R2, RMSE
 from sympy import *
 from sympy.core.numbers import ImaginaryUnit
 from sympy.core.symbol import Symbol
@@ -42,7 +42,7 @@ class Solution:
         try:
             Solution.fit_calls+=1
             yp = self.evaluate_all(X, cache) 
-            return (1-utils.R2(y, yp), utils.RMSE(y, yp), self.size())
+            return (1-R2(y, yp), RMSE(y, yp), self.size())
         except Exception as e:
             #print(e)
             Solution.math_error_count+=1

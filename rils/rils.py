@@ -5,11 +5,11 @@ from random import Random
 from sklearn.base import BaseEstimator
 import copy
 from sympy import *
-from node import Node, NodeConstant, NodeVariable, NodePlus, NodeMinus, NodeMultiply, NodeDivide, NodeSqr, NodeSqrt, NodeLn, NodeExp, NodeSin, NodeCos, NodeArcCos, NodeArcSin
+from .node import Node, NodeConstant, NodeVariable, NodePlus, NodeMinus, NodeMultiply, NodeDivide, NodeSqr, NodeSqrt, NodeLn, NodeExp, NodeSin, NodeCos, NodeArcCos, NodeArcSin
 
 import warnings
 
-from solution import Solution
+from .solution import Solution
 warnings.filterwarnings("ignore")
 
 class RILSRegressor(BaseEstimator):
