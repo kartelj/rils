@@ -1,7 +1,8 @@
 from tabnanny import check
 from pmlb import fetch_data
 from sklearn.model_selection import train_test_split
-from rils import RILSRegressor, noisefy, R2, RMSE
+from rils import RILSRegressor
+from utils import noisefy, R2, RMSE
 from os import listdir, stat
 import sys
 from sklearn.utils.estimator_checks import check_estimator
