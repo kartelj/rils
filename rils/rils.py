@@ -6,14 +6,13 @@ from random import Random, seed, shuffle
 from sklearn.base import BaseEstimator
 import copy
 from sympy import *
-from .node import Node, NodeArcCos, NodeArcSin, NodeConstant, NodePow, NodeGauss, NodeTan, NodeIdentity, NodeVariable, NodePlus, NodeMinus, NodeMultiply, NodeDivide, NodeSqr, NodeSqrt, NodeLn, NodeExp, NodeSin, NodeCos, NodeAbs
+from .node import Node, NodeConstant, NodeVariable, NodePlus, NodeMinus, NodeMultiply, NodeDivide, NodeSqr, NodeSqrt, NodeLn, NodeExp, NodeSin, NodeCos, NodeAbs
 from enum import Enum
 import warnings
 from .solution import Solution
-from numpy import imag, real
 import numpy as np
 from sklearn.metrics import r2_score, mean_squared_error, explained_variance_score, max_error, mean_absolute_error, mean_squared_log_error, mean_pinball_loss, mean_tweedie_deviance, mean_poisson_deviance, mean_gamma_deviance, d2_tweedie_score, d2_pinball_score, d2_absolute_error_score
-from .utils import diff_R2, diff_RMSE, percentile_abs_error, log_cosh, distribution_fit_score
+from .utils import diff_R2, diff_RMSE, percentile_abs_error, log_cosh
 from scipy.stats import normaltest, ks_2samp
 
 warnings.filterwarnings("ignore")
@@ -39,26 +38,20 @@ class FitnessType(Enum):
     DIFF_R2 = 17
     DIFF_RMSE = 18
     DIST_DIFF = 19
-    EXPERIMENTAL = 20
 
-class VINSROLSRegressor(BaseEstimator):
+class RILSRegressor(BaseEstimator):
 
-    def __init__(self, max_fit_calls=100000, max_seconds=10000, k_max=2, fitness_type=FitnessType.DEFAULT, complexity_penalty=0.0001, initial_sample_size=0.01,simplification=True, first_improvement=True, change_ignoring=False, initial_target_size=20, verbose=False, random_state=0):
+    def __init__(self, max_fit_calls=100000, max_seconds=10000, fitness_type=FitnessType.DEFAULT, complexity_penalty=0.001, initial_sample_share=1, first_improvement=True, target_size=20, verbose=False, random_state=0):
         self.max_seconds = max_seconds
         self.max_fit_calls = max_fit_calls
         self.fitness_type = fitness_type
         self.complexity_penalty = complexity_penalty
-        self.initial_sample_size = initial_sample_size
+        self.initial_sample_size = initial_sample_share
         self.error_tolerance = 1e-16
         self.verbose = verbose
         self.random_state = random_state
-        self.k_min = 1
-        self.k_max = k_max
-        self.simplification = simplification
+        self.target_size = target_size
         self.first_improvement = first_improvement
-        self.change_ignoring = change_ignoring
-        self.initial_target_size = initial_target_size
-        self.target_size = self.initial_target_size
 
     def __reset(self):
         self.var_cnt = 0
@@ -72,7 +65,7 @@ class VINSROLSRegressor(BaseEstimator):
         self.time_elapsed = 0
         self.ls_time = 0
         self.ls_cand_time = 0
-        self.shake_time = 0
+        self.perturbation_time = 0
         self.simp_time = 0
         self.dc_time = 0
         seed(self.random_state)
@@ -142,19 +135,13 @@ class VINSROLSRegressor(BaseEstimator):
         best_fitness = self.fitness(best_solution, X, y)
         print("Initial fitness "+str(best_fitness))
 
-        #yp = best_solution.evaluate_all(X_test, False)
-        #for i in range(len(yp)):
-        #    print(str(y_test[i])+"\t"+str(yp[i]))
-
         self.main_it = 0
-        k = self.k_min
         while self.time_elapsed<self.max_seconds and Solution.fit_calls<self.max_fit_calls: 
             start = time.time()
-            new_solution = self.shake_random(best_solution, k) #self.shake_directed_random(best_solution, k, X, y) # 
-            self.shake_time+=(time.time()-start)
+            new_solution = self.perturb(best_solution) 
+            self.perturbation_time+=(time.time()-start)
             if self.verbose:
-                #sympy_shaked = sympify(str(new_solution)).evalf()
-                print("Shaked solution "+str(new_solution))
+                print("Perturbed solution "+str(new_solution))
             
             start = time.time()
             new_solution = self.LS(new_solution, X, y)
@@ -171,55 +158,24 @@ class VINSROLSRegressor(BaseEstimator):
                 best_solution = copy.deepcopy(new_solution)
                 self.dc_time+=(time.time()-start)
                 best_fitness = new_fitness
-                k = self.k_min
                 self.last_improved_it = self.main_it
-                #self.target_size-=5
-                #if self.target_size<self.initial_target_size:
-                #self.target_size = self.initial_target_size
-                #print("RESETTING TO INITIAL TARGET SIZE "+str(self.target_size))
-            else:
-                k = k+1
-                if k>self.k_max:
-                    k = self.k_min
 
             fitness_test = self.fitness(best_solution, X_test, y_test, cache=False)
             self.time_elapsed = time.time()-self.start
             sympy_sol = sympify(best_solution).evalf()
-            sympy_size = VINSROLSRegressor.complexity(sympy_sol)
-            print("%d/%d. k=%d t=%.1f R2=%.7f R2tst=%.7f RMSE=%.7f RMSEtst=%.7f DiffR2=%.7f DiffRMSE=%.7f DIST=%.7f RES_NORM=%s size=%d symSize=%d initTrgtSize=%d trgtSize=%d FIT=%.7f fittype=%s firstImpr=%s simplification=%s changeIgnore=%s factors=%d mathErr=%d fitCalls=%d fitFails=%d fitTime=%d lrTime=%d shTime=%d simpTime=%d lsTime=%d lsCandTime=%d dcTime=%d triedChg=%d totChg=%d cPerc=%.1f cSize=%d\n                                                                          expr=%s"
-            %(self.main_it,self.ls_it, k, self.time_elapsed, best_fitness[0], fitness_test[0], best_fitness[1],fitness_test[1], best_fitness[4], best_fitness[5], best_fitness[6], best_fitness[7], best_solution.size(), sympy_size, self.initial_target_size, self.target_size, best_fitness[3], self.fitness_type, self.first_improvement, self.simplification, self.change_ignoring,  len(best_solution.factors), Solution.math_error_count, Solution.fit_calls, Solution.fit_fails, Solution.fit_time, 
-              Solution.lr_solving_time, self.shake_time, self.simp_time, self.ls_time, self.ls_cand_time, self.dc_time, self.tried_changes_cnt, self.total_changes_cnt,  Node.cache_hits*100.0/Node.cache_tries, len(Node.node_value_cache), sympy_sol))
+            sympy_size = RILSRegressor.complexity(sympy_sol)
+            print("%d/%d. t=%.1f R2=%.7f R2tst=%.7f RMSE=%.7f RMSEtst=%.7f size=%d symSize=%d trgtSize=%d FIT=%.7f fittype=%s firstImpr=%s factors=%d mathErr=%d fitCalls=%d fitFails=%d fitTime=%d lrTime=%d cPerc=%.1f cSize=%d\n                                                                          expr=%s"
+            %(self.main_it,self.ls_it, self.time_elapsed, best_fitness[0], fitness_test[0], best_fitness[1],fitness_test[1], best_solution.size(), sympy_size, self.target_size, best_fitness[3], self.fitness_type, self.first_improvement, 
+              len(best_solution.factors), Solution.math_error_count, Solution.fit_calls, Solution.fit_fails, Solution.fit_time, Solution.lr_solving_time,  Node.cache_hits*100.0/Node.cache_tries, len(Node.node_value_cache), sympy_sol))
             #self.print_change_type_stats()
             self.main_it+=1
             if best_fitness[0]<=self.error_tolerance and best_fitness[1] <= pow(self.error_tolerance, 0.125):
                 break
-            #if self.main_it-self.last_improved_it>1 and self.main_it-self.last_target_size_increase_it>1:
-            #    self.target_size+=5
-            #    self.last_target_size_increase_it=self.main_it
-             #   print("INCREASE TARGET SIZE TO "+str(self.target_size))
-        #self.model_simp = simplify(str(best_solution), ratio=1)
         print("Doing sympify of "+str(best_solution))
         self.model_simp = sympify(str(best_solution)).evalf()
         print("Finished with sympy model "+str(self.model_simp))
-        #self.model_simp = self.round_floats(self.model_simp)
-        self.model = best_solution # Solution([Solution.convert_to_my_nodes(self.model_simp)])
+        self.model = best_solution
         return (self.model, self.model_simp)
-    
-    def round_floats(self, ex1):
-        round_digits = int(math.log10(1/self.error_tolerance))
-        if round_digits>8:
-            round_digits = 8
-        #if round_digits<4:
-        #    round_digits = 4
-        print("Round to "+str(round_digits)+" digits.")
-        ex2 = ex1
-        for a in preorder_traversal(ex1):
-            if isinstance(a, Float):
-                if round(a, round_digits)==round(a, 0):
-                    ex2 = ex2.subs(a, Integer(round(a)))
-                else:
-                    ex2 = ex2.subs(a, Float(round(a, round_digits)))
-        return ex2
 
     def predict(self, X):
         Solution.clearStats()
@@ -240,9 +196,8 @@ class VINSROLSRegressor(BaseEstimator):
         if self.model==None:
             raise Exception("Model is not build yet. First call fit().")
         fitness = self.fitness(self.model, X,y, cache=False)
-        return "maxTime={0}\tmaxFitCalls={1}\tseed={2}\tsizePenalty={3}\tR2={4:.7f}\tRMSE={5:.7f}\tsize={6}\tsec={7:.1f}\tmainIt={8}\tlsIt={9}\tfitCalls={10}\tfitType={11}\tinitSampleSize={12}\tfirstImpr={13}\tsimplification={14}\tchangeIgnore={15}\tkMax={16}\tinitTargetSize={17}\texpr={18}\texprSimp={19}".format(
-            self.max_seconds,self.max_fit_calls,self.random_state,self.complexity_penalty, fitness[0], fitness[1], VINSROLSRegressor.complexity(self.model_simp), self.time_elapsed,self.main_it, self.ls_it,Solution.fit_calls, self.fitness_type, self.initial_sample_size, 
-            self.first_improvement, self.simplification, self.change_ignoring , self.k_max, self.initial_target_size, self.model, self.model_simp)
+        return "maxTime={0}\tmaxFitCalls={1}\tseed={2}\tsizePenalty={3}\tR2={4:.7f}\tRMSE={5:.7f}\tsize={6}\tsec={7:.1f}\tmainIt={8}\tlsIt={9}\tfitCalls={10}\tfitType={11}\tinitSampleSize={12}\tfirstImpr={13}\tsimplification={14}\tchangeIgnore={15}\tkMax={16}\ttargetSize={17}\texpr={18}\texprSimp={19}".format(
+            self.max_seconds,self.max_fit_calls,self.random_state,self.complexity_penalty, fitness[0], fitness[1], RILSRegressor.complexity(self.model_simp), self.time_elapsed,self.main_it, self.ls_it,Solution.fit_calls, self.fitness_type, self.initial_sample_size, self.target_size, self.model, self.model_simp)
 
     def complexity(model_simp):
         c=0
@@ -257,67 +212,48 @@ class VINSROLSRegressor(BaseEstimator):
         solution.factors[0] = solution.factors[0].random_isomorphic_rotation(0.5, self.rg)
         return solution
 
-    def shake_random(self, solution: Solution, k):
-        shaked_solution = solution
-        for i in range(k):
-            perts = self.all_perturbations(shaked_solution)
-            if self.verbose:
-                print(str(i)+". selecting from "+str(len(perts))+" perturbations") # of "+str(shaked_solution))
-            pert_i = self.rg.randrange(0, len(perts))
-            shaked_solution = perts[pert_i]
-        return shaked_solution
-    
-    def shake_directed_random(self, solution: Solution, k, X, y):
-        shaked_solution = solution
-        for i in range(k):
-            perts = self.all_perturbations(shaked_solution)
-            pert_fits = {}
-            for pert in perts: 
-                pert_ols = copy.deepcopy(pert)
-                pert_ols = pert_ols.fit_constants_LSTSQ(X, y)
-                pert_ols_fit = self.fitness(pert_ols, X, y)
-                pert_fits[pert]=pert_ols_fit[0]
-
-            sorted_pret_fits = sorted(pert_fits.items(), key = lambda x: x[1])[:10] # take best ten as candidates
-            shaked_solution = sorted_pret_fits[self.rg.randrange(0, len(sorted_pret_fits))][0]
+    def perturb(self, solution: Solution):
+        perturbed_solution = solution
+        perts = self.all_perturbations(perturbed_solution)
         if self.verbose:
-            print("Shaked solution "+str(shaked_solution)+ " from "+str(solution))
-        return shaked_solution
+            print("Selecting from "+str(len(perts))+" perturbations")
+        pert_i = self.rg.randrange(0, len(perts))
+        perturbed_solution = perts[pert_i]
+        return perturbed_solution
 
     def all_perturbations(self, solution: Solution):
         all = []
-        shaked_solution = copy.deepcopy(solution)
-        #shaked_solution.normalize_constants()
-        shaked_solution.simplify_whole(self.var_cnt)
-        shaked_solution.join()
-        assert len(shaked_solution.factors)==1
+        perturbed_solution = copy.deepcopy(solution)
+        perturbed_solution.simplify_whole(self.var_cnt)
+        perturbed_solution.join()
+        assert len(perturbed_solution.factors)==1
         j = 0
-        all_subtrees = shaked_solution.factors[0].all_nodes_exact()
+        all_subtrees = perturbed_solution.factors[0].all_nodes_exact()
         if len(all_subtrees)==0: # this is the case when we have constant or variable, so we just change the root
-            for cand in self.perturb_candidates(shaked_solution.factors[j]):
-                perturbed = copy.deepcopy(shaked_solution)
+            for cand in self.perturb_candidates(perturbed_solution.factors[j]):
+                perturbed = copy.deepcopy(perturbed_solution)
                 perturbed.factors[j] = cand
                 #perturbed.simplify_whole(varCnt)
                 all.append(perturbed)
         else:
             for i in range(len(all_subtrees)):
                 refNode = all_subtrees[i]
-                if refNode==shaked_solution.factors[j]:
-                    for cand in self.perturb_candidates(shaked_solution.factors[j]):
-                        perturbed = copy.deepcopy(shaked_solution)
+                if refNode==perturbed_solution.factors[j]:
+                    for cand in self.perturb_candidates(perturbed_solution.factors[j]):
+                        perturbed = copy.deepcopy(perturbed_solution)
                         perturbed.factors[j] = cand
                         #perturbed.simplify_whole(varCnt)
                         all.append(perturbed)
                 if refNode.arity >= 1:
                     for cand in self.perturb_candidates(refNode.left, refNode, True):
-                        perturbed = copy.deepcopy(shaked_solution)
+                        perturbed = copy.deepcopy(perturbed_solution)
                         perturbed_subtrees = perturbed.factors[j].all_nodes_exact()
                         perturbed_subtrees[i].left = cand
                         #perturbed.simplify_whole(varCnt)
                         all.append(perturbed)
                 if refNode.arity>=2:
                     for cand in self.perturb_candidates(refNode.right, refNode, False):
-                        perturbed = copy.deepcopy(shaked_solution)
+                        perturbed = copy.deepcopy(perturbed_solution)
                         perturbed_subtrees = perturbed.factors[j].all_nodes_exact()
                         perturbed_subtrees[i].right = cand
                         #perturbed.simplify_whole(varCnt)
@@ -365,39 +301,26 @@ class VINSROLSRegressor(BaseEstimator):
             self.time_elapsed = time.time()-self.start
             if self.time_elapsed>self.max_seconds or Solution.fit_calls>self.max_fit_calls:
                 break
-            
             if best_solution.size()>self.target_size:
                 increasing = False
             else:
                 increasing = None
             new_solution = self.LS_iteration(best_solution, X, y, increasing=increasing)
-            #print("Finished LS iteration")
             new_fitness = self.fitness(new_solution, X, y)
-            #print("Doing linearization solution before\t"+str(new_fitness))
-            #new_solution = self.Linearize(new_solution, X, y)
-            #new_fitness = self.fitness(new_solution, X, y)
-            #print("Finished linearization solution after\t"+str(new_fitness))
-
-            # doing more expensive stuff if less expensive (above) does not yield improvements
-            #if self.compare_fitness(new_fitness, best_fitness)>=0:
-            #    new_solution = self.LS_iteration(best_solution, X, y,  increasing=True)
-            #    new_fitness = self.fitness(new_solution, X, y, cache=False)
-
             if self.compare_fitness(new_fitness, best_fitness)<0:
                 impr = True
                 best_solution = copy.deepcopy(new_solution)
                 best_fitness = copy.deepcopy(new_fitness)
-                if self.simplification:
-                    best_solution_simp = copy.deepcopy(best_solution)
-                    best_solution_simp.simplify_whole(len(X[0]))
-                    best_fitness_simp = self.fitness(best_solution_simp, X, y)
-                    if math.isnan(best_fitness_simp[0]) or math.isnan(best_fitness_simp[1]) or abs(best_fitness_simp[0]-best_fitness[0])>0.0001 or abs(best_fitness_simp[1]-best_fitness[1])>0.0001:
-                        if self.verbose:
-                            print("WARNING: worse solution after simpliflication OLD "+str(best_solution)+" NEW "+str(best_solution_simp))
-                            print("Old fitness "+str(best_fitness)+"  new fitness"+str(best_fitness_simp))
-                    else:
-                        best_solution = best_solution_simp
-                        best_fitness = best_fitness_simp
+                best_solution_simp = copy.deepcopy(best_solution)
+                best_solution_simp.simplify_whole(len(X[0]))
+                best_fitness_simp = self.fitness(best_solution_simp, X, y)
+                if math.isnan(best_fitness_simp[0]) or math.isnan(best_fitness_simp[1]) or abs(best_fitness_simp[0]-best_fitness[0])>0.0001 or abs(best_fitness_simp[1]-best_fitness[1])>0.0001:
+                    if self.verbose:
+                        print("WARNING: worse solution after simpliflication OLD "+str(best_solution)+" NEW "+str(best_solution_simp))
+                        print("Old fitness "+str(best_fitness)+"  new fitness"+str(best_fitness_simp))
+                else:
+                    best_solution = best_solution_simp
+                    best_fitness = best_fitness_simp
                 if self.verbose:
                     print("IMPROVED to "+str(best_fitness)+"\t"+str(best_solution))
                 # put into non_dominated set and recalculate it
@@ -407,68 +330,8 @@ class VINSROLSRegressor(BaseEstimator):
                 continue  
         return best_solution
 
-    def Linearize(self, solution: Solution, X, y):
-        best_solution = copy.deepcopy(solution)
-        best_fitness = self.fitness(best_solution, X, y)
-
-        linear_solution = Solution([NodeVariable(i) for i in range(len(X[0]))])
-            
-        assert(len(best_solution.factors)<=1)
-
-        new_solution = copy.deepcopy(best_solution)
-        all_subtrees = new_solution.factors[0].all_nodes_exact()
-
-        for subtree in all_subtrees:
-            if subtree.size()<5:
-                continue
-            if subtree.arity>=1:
-                if subtree.left.size()<3:
-                    continue
-                subtree_left = copy.deepcopy(subtree.left)
-                subtree_left_ys = subtree_left.evaluate_all(X, True)
-                temp = copy.deepcopy(linear_solution)
-                fitted_solution = temp.fit_constants_LSTSQ(X, subtree_left_ys)
-                fitted_solution.join()
-                assert(len(fitted_solution.factors)==1)
-                fitted_subtree = fitted_solution.factors[0]
-                old_left = copy.deepcopy(subtree.left)
-                subtree.left = fitted_subtree
-                new_fitness = self.fitness(new_solution, X, y)
-                if self.compare_fitness(new_fitness, best_fitness)<0:
-                    if self.verbose:
-                        print("LINEARIZED LEFT from "+ str(best_fitness)+ " to "+str(new_fitness)) #+"\t"+str(new_solution))
-                    best_fitness = new_fitness
-                    best_solution = copy.deepcopy(new_solution)
-                subtree.left = old_left
-            
-            if subtree.arity>=2:
-                if subtree.right.size()<3:
-                    continue
-                subtree_right = copy.deepcopy(subtree.right)
-                subtree_right_ys = subtree_right.evaluate_all(X, True)
-                temp = copy.deepcopy(linear_solution)
-                fitted_solution = temp.fit_constants_LSTSQ(X, subtree_right_ys)
-                fitted_solution.join()
-                assert(len(fitted_solution.factors)==1)
-                fitted_subtree = fitted_solution.factors[0]
-                old_right = copy.deepcopy(subtree.right)
-                subtree.right = fitted_subtree
-                new_fitness = self.fitness(new_solution, X, y)
-                if self.compare_fitness(new_fitness, best_fitness)<0:
-                    if self.verbose:
-                        print("LINEARIZED RIGHT from "+ str(best_fitness)+ " to "+str(new_fitness)) #+"\t"+str(new_solution))
-                    best_fitness = new_fitness
-                    best_solution = copy.deepcopy(new_solution)
-                subtree.right = old_right
-
-        return best_solution
-
     def all_LS_changes(self, best_solution: Solution, increasing)->set[Solution]:
         solution = copy.deepcopy(best_solution)
-        #solution.normalize_constants()
-        #solution.simplify_whole(self.var_cnt)
-        #size = solution.size()
-        #extended_changes = size < self.max_size_with_extended_changes
         solution_changes = set([])
         if len(solution.factors)>1:
             print("JOINING")
@@ -500,27 +363,19 @@ class VINSROLSRegressor(BaseEstimator):
         solution = self.move_to_random_isomorphic(solution)
         test_fitness = self.fitness(solution, X, y)
         if best_fitness[3]!=inf and test_fitness[3]!=inf:
-            #assert(abs(best_fitness[3]-test_fitness[3])<0.001)
             if abs(best_fitness[3]-test_fitness[3])>0.001:
                 print("Error when moving to isomorphic tree solution.")
         new_solution = copy.deepcopy(solution)
         all_changes = self.all_LS_changes(new_solution, increasing)
         if self.verbose:
             print(str(len(all_changes))+" LS change candidates for mode="+str(increasing))
-  
-        #test = [1,2,3,4,5]
-        #self.rg.shuffle(test)
+
         self.rg.shuffle(all_changes)
         best_change = None
 
         for change in all_changes:
             self.total_changes_cnt+=1
             chg, type = change[0]
-            if self.change_ignoring==True and type in self.change_type_cnts:
-                type_cnts = self.change_type_cnts[type]
-                if type_cnts[0]>1000 and type_cnts[2]<0.1:
-                    #print("Ignoring change of type "+type)
-                    continue    # change was tried at least 1000 times and it was useful in only 0.1% of situations TODO: these two could be parameters
             self.tried_changes_cnt+=1
             if self.verbose and self.tried_changes_cnt%1000==0:
                 print("Tried "+str(self.tried_changes_cnt)+"/"+str(self.total_changes_cnt)+"\t"+str(best_fitness))
@@ -799,16 +654,16 @@ class VINSROLSRegressor(BaseEstimator):
             mse = mean_squared_error(y, yp)
             rmse = sqrt(mse)
             size = solution.size()
-            # TODO: uncommenting following lines for dist fit score and tests slows down the program ~ 4x
+            # uncommenting following lines for dist fit score and tests slows down the program ~ 4x
             dist_diff = 0 # distribution_fit_score(y, yp)
             #res = [y[i]-yp[i] for i in range(len(y))]
             _, p_val_norm_res = 0, 0 # normaltest(res)
             _, p_val_same_dist = 0, 0 # ks_2samp(y, yp)
-            # 0-hypothesis is that samples of y and yp belong to same distribution
-            #same_dist = p_val>0.05 # 0-hypothesis is rejected
 
             if self.fitness_type == FitnessType.DEFAULT:
-                final = (2-r2)*(1+rmse)*(1+self.complexity_penalty*size)
+                if size<self.target_size:
+                    size = self.target_size
+                final = (2-r2)*size
             elif self.fitness_type == FitnessType.R2:
                 final = (2-r2)*(1+self.complexity_penalty*size)
             elif self.fitness_type == FitnessType.MSE:
@@ -847,10 +702,6 @@ class VINSROLSRegressor(BaseEstimator):
                 final = (2-r2)*(1+diff_rmse)*(1+self.complexity_penalty*size)
             elif self.fitness_type == FitnessType.DIST_DIFF:
                 final = (1+0.1*dist_diff)*(2-r2)*(1+self.complexity_penalty*size)
-            elif self.fitness_type == FitnessType.EXPERIMENTAL:
-                if size<self.target_size:
-                    size = self.target_size
-                final = (2-r2)*size
             else:
                 raise Exception("Unrecognized fitness type "+str(self.fitness_type))
             result = (r2, rmse, size, final, diff_r2, diff_rmse, dist_diff, p_val_norm_res, p_val_same_dist)
@@ -865,7 +716,7 @@ class VINSROLSRegressor(BaseEstimator):
     def compare_fitness(self, new_fit, old_fit):
         if math.isnan(new_fit[0]):
             return 1
-        # do not accept small improvements (too much time lost), so we can have enough time to perform more shaking steps
+        # do not accept small improvements (too much time lost), so we can have enough time to perform perturbations
         if new_fit[3] < 0.9999*old_fit[3]:
             return -1
         return 0 # 1

@@ -8,7 +8,6 @@ from sympy.core.symbol import Symbol
 import numpy as np
 import statsmodels.api as sma
 import hashlib
-from scipy.linalg import lstsq
 from scipy.stats import pearsonr
 from operator import add
 
