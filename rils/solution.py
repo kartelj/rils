@@ -1,76 +1,102 @@
 import copy
 from math import e, inf
-import math
-
+import time
 from .node import NodeAbs, NodeArcCos, NodeArcSin, NodeArcTan, NodeCeil, NodeConstant, NodeCos, NodeExp, NodeFloor, NodeLn, NodeMax, NodeMin, NodeMultiply, NodePlus, NodePow, NodeSgn, NodeSin, NodeTan, NodeVariable
-from .utils import R2, RMSE
 from sympy import *
 from sympy.core.numbers import ImaginaryUnit
 from sympy.core.symbol import Symbol
 import numpy as np
 import statsmodels.api as sma
-
+import hashlib
+from scipy.linalg import lstsq
+from scipy.stats import pearsonr
+from operator import add
 
 class Solution:
 
     math_error_count = 0
-    fit_calls = 0
+    fit_calls = 1
     fit_fails = 0
+    lr_solving_time = 0
+    fit_time = 0
+    #factor_value_cache = {}
+    #fact_value_calls = 1
+    #fact_value_hits = 0
+    #factor_correl_cache = {}
+    #fact_correl_calls = 1
+    #fact_correl_hits = 0
 
     @classmethod
     def clearStats(cls):
         cls.math_error_count=0
         cls.fit_fails = 0
-        cls.fit_calls=0
+        cls.fit_calls=1
+        cls.lr_solving_time = 0
+        cls.fit_time = 0
+        #cls.factor_value_cache = {}
+        #cls.fact_value_calls = 1
+        #cls.fact_value_hits = 0
 
-    def __init__(self, factors, complexity_penalty):
+    def __init__(self, factors):
+        # factors are basically subexpressions that enter linear combination, e.g. 2*x+3y*sin(x*y) --> factors = [2x, 3y*sin(x*y)]
         self.factors =  copy.deepcopy(factors)
-        self.complexity_penalty = complexity_penalty
 
     def __str__(self) -> str:
         return "+".join([str(x) for x in self.factors])
+    
+    def __eq__(self, other):
+        return str(self) == str(other)
+    
+    def __hash__(self):
+        # Stable hash (same for different runs, unlike standard hash() method)
+        h = hashlib.sha1(str(self).encode("ascii"))
+        return int(h.hexdigest(), 16)
+        #return hash(str(self))
+    
+    def evaluate_all_new(self, X, cache):
+        self.sympy_expr = SymExpr(str(self), X.shape[1])
+        yp = self.sympy_expr.eval(X)
+        return yp
 
     def evaluate_all(self,X, cache):
         yp = np.zeros(len(X))
         for fact in self.factors:
             fyp = fact.evaluate_all(X, cache)
-            for i in range(len(fyp)):
-                yp[i]+=fyp[i]
+            yp = list(map(add, yp, fyp))
         return yp
 
-    def fitness(self, X, y, cache=True):
-        try:
-            Solution.fit_calls+=1
-            yp = self.evaluate_all(X, cache) 
-            return (1-R2(y, yp), RMSE(y, yp), self.size())
-        except Exception as e:
-            #print(e)
-            Solution.math_error_count+=1
-            Solution.fit_fails+=1
-            return (inf, inf, inf)
-
     def size(self):
+        #return self.sympy_expr.count_nodes()
         totSize = len(self.factors) 
         for fact in self.factors:
             totSize+=fact.size()
         return totSize
-        
+    
+    def size_non_linear(self):
+        totSize = 1
+        for fact in self.factors:
+            totSize+=fact.size_non_linear()
+        return totSize
+    
+    def size_operators_only(self):
+        totSize = len(self.factors)
+        for fact in self.factors:
+            totSize+=fact.size_operators_only()
+        return totSize
 
     def fit_constants_OLS(self, X, y):
+        start = time.time()
         new_factors = []
         for fact in self.factors:
             if fact.contains_type(type(NodeVariable(0))):
                 new_factors.append(copy.deepcopy(fact))
         Xnew = np.zeros((len(X), len(new_factors)))
         try:
+            local_cache = {}
             for i in range(len(new_factors)):
                 fiX = new_factors[i].evaluate_all(X, True)
-                for j in range(len(fiX)):
-                    if math.isnan(fiX[j]):
-                        raise Exception("nan happened")
-                    if isinstance(fiX[j], complex):
-                        raise Exception("complex happened")
-                    Xnew[j, i]=fiX[j]
+                local_cache[new_factors[i]]=fiX
+                Xnew[:, i] = fiX
             X2_new = sma.add_constant(Xnew)
             est = sma.OLS(y, X2_new)
             fit_info = est.fit()
@@ -80,9 +106,11 @@ class Solution:
             final_factors = []
             p_values = fit_info.pvalues
             if p_values[0]<=signLevel:
-                final_factors.append(NodeConstant(params[0]))
-            else:
-                final_factors.append(NodeConstant(0))
+                free_element = NodeConstant(params[0])
+                final_factors.append(free_element)
+                #Solution.factor_value_cache[free_element] = [free_element.value]*len(X)
+            #else:
+            #    final_factors.append(NodeConstant(0))
             for i in range(1, len(params)):
                 if p_values[i]>signLevel:
                     continue
@@ -92,12 +120,123 @@ class Solution:
                 new_fact.left = NodeConstant(coef)
                 new_fact.right = fi_old
                 final_factors.append(new_fact)
-            new_sol = Solution(final_factors, self.complexity_penalty)
+                fiX = local_cache[fi_old]
+                #new_fiX = list(map(lambda x : new_fact.left.value*x, fiX))
+                #Solution.factor_value_cache[new_fact] = new_fiX
+            new_sol = Solution(final_factors)
             return new_sol
         except Exception as ex:
             Solution.math_error_count+=1
-            #print("OLS error "+str(ex))
+            print("OLS error "+str(ex))
             return copy.deepcopy(self)
+        finally:
+            Solution.lr_solving_time+=(time.time()-start)
+        
+    # https://stackoverflow.com/questions/55367024/fastest-way-of-solving-linear-least-squares
+    #custom OLS by LU factorization
+    def ord_lu(self, X, y):
+        A = X.T @ X
+        b = X.T @ y
+        beta = solve(A, b, overwrite_a=True, overwrite_b=True,
+                    check_finite=False)
+        return beta
+    
+    # normalize linear elements of the factor: c1+c2*f = f  or c2*f=f  or c1+f = f
+    def normalize_factor(self, fact):
+        fact_norm = copy.deepcopy(fact)
+        if type(fact_norm)==type(NodePlus()):
+            # remove additive part
+            if type(fact_norm.left)==type(NodeConstant(0)):
+                fact_norm = fact_norm.right
+            elif type(fact_norm.right)==type(NodeConstant(0)):
+                fact_norm = fact_norm.left
+        if type(fact_norm)==type(NodeMultiply()):
+            # remove multiplier
+            if type(fact_norm.left)==type(NodeConstant(0)):
+                fact_norm = fact_norm.right
+            elif type(fact_norm.right)==type(NodeConstant(0)):
+                fact_norm = fact_norm.left
+        return fact_norm
+
+
+    def fit_constants_LSTSQ(self, X, y)->'Solution':
+        y = np.array(y)
+        start = time.time()
+        new_factors = []
+        fiXall = []
+        for fact in self.factors:
+            if fact.contains_type(type(NodeVariable(0))):
+                try:
+                    '''
+                    Solution.fact_correl_calls+=1
+                    if fact in Solution.factor_correl_cache:
+                        #print("FOUND in correl cache "+str(fact) +" normalized "+str(fact_norm))
+                        r, pvalue = Solution.factor_correl_cache[fact]
+                        Solution.fact_correl_hits+=1
+                    else:
+                        #print("Not in correl cache "+str(fact) +" normalized "+str(fact_norm))
+                        Solution.fact_value_calls+=1
+                        if fact in Solution.factor_value_cache:
+                            Solution.fact_value_hits+=1
+                            fiX = Solution.factor_value_cache[fact]
+                        else:
+                            fiX = fact.evaluate_all(X, True)
+                            Solution.factor_value_cache[fact] = fiX
+                            '''
+                    fiX = fact.evaluate_all(X, True)
+                    r, pvalue = pearsonr(fiX, y)
+                    #Solution.factor_correl_cache[fact]=(r, pvalue)
+                    #if len(Solution.factor_correl_cache)>100000:
+                    #    Solution.factor_correl_cache.clear()
+                    if pvalue<0.1:
+                        new_factors.append(copy.deepcopy(fact))
+                        fiXall.append(fiX)
+                    #else:
+                        #print("Factor "+str(fact)+" not significantly correlated to y.")
+                except:
+                    Solution.math_error_count+=1
+                    #print("Skipping "+str(fact))
+        #if len(new_factors)==0:
+        #    return Solution([])
+        Xnew = np.zeros((len(X), len(new_factors)+1))
+        try:
+            for j in range(len(X)):
+                Xnew[j, 0] = 1
+            for i in range(len(new_factors)):
+                Xnew[:, i+1] = fiXall[i]
+
+            final_factors = []
+            
+            # https://stackoverflow.com/questions/55367024/fastest-way-of-solving-linear-least-squares
+            params = self.ord_lu(Xnew, y)
+            #params, res, rank, s = lstsq(Xnew, y, lapack_driver='gelsy', check_finite=False)
+
+            min_coef = 0.001
+            if abs(params[0])>=min_coef:
+                free_element = NodeConstant(params[0])#, ols_fitted=True)
+                final_factors.append(free_element)
+                # add to factor cache
+                #Solution.factor_value_cache[free_element] = [free_element.value]*len(X)
+            for i in range(1, len(params)):
+                coef = params[i]
+                if abs(coef)<min_coef:
+                    continue
+                fi_old = copy.deepcopy(new_factors[i-1])
+                new_fact = NodeMultiply()
+                new_fact.left = NodeConstant(coef)#, ols_fitted=True)
+                new_fact.right = fi_old
+                final_factors.append(new_fact)
+                fiX = fiXall[i-1]
+                #new_fiX = list(map(lambda x : new_fact.left.value*x, fiX))
+                #Solution.factor_value_cache[new_fact] = new_fiX
+            new_sol = Solution(final_factors)
+            return new_sol
+        except Exception as ex:
+            Solution.math_error_count+=1
+            print("OLS error "+str(ex))
+            return copy.deepcopy(self)
+        finally:
+            Solution.lr_solving_time+=(time.time()-start)
 
     def normalize_constants(self):
         for fact in self.factors:
@@ -113,7 +252,7 @@ class Solution:
             else:
                 factors = list(expr_exp.args)
             for factor in factors:
-                myFactor = self.convert_to_my_nodes(factor)
+                myFactor = Solution.convert_to_my_nodes(factor)
                 my_factors.append(myFactor)
         except Exception as ex:
             #print("Expand to factors error: "+str(ex))
@@ -147,14 +286,15 @@ class Solution:
         expression_str = str(expression)
         expression_simpy = sympify(expression_str).evalf()
         try:
-            new_expression = self.convert_to_my_nodes(expression_simpy)
-            new_factors = self.expand_to_factors(new_expression)
-            if new_factors is not None:
-                self.factors = new_factors
-            else:
-                raise Exception("Expansion to factors failed.")
+            new_expression = Solution.convert_to_my_nodes(expression_simpy)
+            self.factors = [new_expression]
+            #new_factors = self.expand_to_factors(new_expression)
+            #if new_factors is not None:
+            #    self.factors = new_factors
+            #else:
+            #    raise Exception("Expansion to factors failed.")
         except Exception as ex:
-            print("SimplifyWhole: "+str(ex))
+            print("SimplifyWhole: "+str(ex) +" for sympy_exp "+str(expression_simpy))
             print("Simplifying factors instead.")
             self.simplify_factors(varCnt)
 
@@ -168,19 +308,12 @@ class Solution:
             expr_str_before = str(fact)
             expr_simpl = sympify(expr_str_before).evalf()
             try:
-                newFact = self.convert_to_my_nodes(expr_simpl)
+                newFact = Solution.convert_to_my_nodes(expr_simpl)
                 if type(newFact)==type(NodeConstant(0)) and newFact.value==0:
                     continue
                 new_factors.append(newFact)
             except Exception as ex:
                 print(ex)
-        self.factors = new_factors
-
-    def expand_fast(self):
-        new_factors = []
-        for fact in self.factors:
-            factFacts = fact.expand_fast()
-            new_factors+=factFacts
         self.factors = new_factors
 
     def expand(self):
@@ -195,7 +328,7 @@ class Solution:
             try:
                 my_expanded_fact = []
                 for f in expanded_fact:
-                    new_factor = self.convert_to_my_nodes(f)
+                    new_factor = Solution.convert_to_my_nodes(f)
                     my_expanded_fact.append(new_factor)  
                 # when all converted correctly, than add them to the final list
                 for f in my_expanded_fact:
@@ -211,25 +344,40 @@ class Solution:
                 return True
         return False
 
-    def convert_to_my_nodes(self,sympy_node):
+    @staticmethod
+    def convert_to_my_nodes(sympy_node):
         if type(sympy_node)==ImaginaryUnit:
             raise Exception("Not working with imaginary (complex) numbers.")
         sub_nodes = []
         for i in range(len(sympy_node.args)):
-            sub_nodes.append(self.convert_to_my_nodes(sympy_node.args[i]))
+            sub_nodes.append(Solution.convert_to_my_nodes(sympy_node.args[i]))
 
         if len(sympy_node.args)==0:
             if type(sympy_node)==Symbol:
                 if str(sympy_node)=="e":
                     return NodeConstant(e)
                 try:
-                    index = int(str(sympy_node).replace("v",""))
+                    index = int(str(sympy_node).replace("x",""))
                     return NodeVariable(index)
                 except Exception as ex:
                     print(sympy_node)
                     print(ex)
             else:
-                return NodeConstant(float(sympy_node))
+                if str(sympy_node)=="pi":
+                    return NodeConstant(pi)
+                elif str(sympy_node)=="1/2":
+                    return NodeConstant(0.5)
+                elif str(sympy_node)=="-1/2":
+                    return NodeConstant(-0.5)
+                elif str(sympy_node)=="1/4":
+                    return NodeConstant(0.25)
+                elif str(sympy_node)=="-1/4":
+                    return NodeConstant(-0.25)
+                elif str(sympy_node)=="1/10":
+                    return NodeConstant(0.1)
+                elif str(sympy_node)=="-1/10":
+                    return NodeConstant(-0.1)
+                return NodeConstant(float(str(sympy_node)))
 
         if len(sympy_node.args)==1:
             if type(sympy_node)==exp:
@@ -257,7 +405,7 @@ class Solution:
             elif type(sympy_node)==ceiling:
                 new = NodeCeil()
             elif type(sympy_node)==re:
-                new = self.convert_to_my_nodes(sympy_node.args[0])
+                new = Solution.convert_to_my_nodes(sympy_node.args[0])
             elif type(sympy_node)==im:
                 return NodeConstant(0) # not doing with imaginary numbers
             else:

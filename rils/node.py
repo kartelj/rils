@@ -1,6 +1,7 @@
 from abc import abstractmethod
 import copy
-from math import acos, asin, atan, ceil, cos, exp, floor, log, sin, sqrt, tan
+from math import acos, asin, atan, ceil, cos, exp, floor, log, sin, sqrt, tan, pi, e
+from random import Random
 
 class Node:
     tmp = -1
@@ -30,12 +31,12 @@ class Node:
         if self.arity==0:
             return self.evaluate_inner(X, None, None)
         elif self.arity == 1:
-            leftVal = self.left.evaluate(X)
-            return self.evaluate_inner(X,leftVal, None)
+            left_val = self.left.evaluate(X)
+            return self.evaluate_inner(X,left_val, None)
         elif self.arity==2:
-            leftVal = self.left.evaluate(X)
-            rightVal = self.right.evaluate(X)
-            return self.evaluate_inner(X,leftVal,rightVal)
+            left_val = self.left.evaluate(X)
+            right_val = self.right.evaluate(X)
+            return self.evaluate_inner(X,left_val,right_val)
         else:
             raise Exception("Arity > 2 is not allowed.")
 
@@ -50,35 +51,17 @@ class Node:
             if self.arity==2:
                 left_yp = self.left.evaluate_all(X, cache)
                 right_yp = self.right.evaluate_all(X, cache)
-                for i in range(len(X)):
-                    ypi = self.evaluate_inner(X[i], left_yp[i], right_yp[i])
-                    yp.append(ypi)
+                yp = list(map(self.evaluate_inner, X, left_yp, right_yp))
             elif self.arity==1:
                 left_yp = self.left.evaluate_all(X, cache)
-                for i in range(len(X)):
-                    ypi = self.evaluate_inner(X[i], left_yp[i], None)
-                    yp.append(ypi)
+                yp = list(map(self.evaluate_inner, X, left_yp, [None]*len(X)))
             elif self.arity==0:
-                for i in range(len(X)):
-                    ypi = self.evaluate_inner(X[i],None, None)
-                    yp.append(ypi)
+                yp = list(map(self.evaluate_inner, X, [None]*len(X), [None]*len(X)))
             if cache:
                 Node.node_value_cache[key]=yp
-                if len(Node.node_value_cache)==5000:
+                if len(Node.node_value_cache)==10000:
                     Node.node_value_cache.clear()
         return yp
-
-    def expand_fast(self):
-        if type(self)==type(NodePlus()) or type(self)==type(NodeMinus()): # TODO: check if minus is happening
-            leftFact = self.left.expand_fast()
-            right = self.right
-            if type(self)==type(NodeMinus()):
-                right = NodeMultiply()
-                right.left = NodeConstant(-1)
-                right.right = copy.deepcopy(self.right)
-            rightFact = right.expand_fast()
-            return leftFact+rightFact
-        return [copy.deepcopy(self)]
 
     def is_allowed_left_argument(self, node_arg):
         return True
@@ -94,49 +77,118 @@ class Node:
     def __hash__(self):
         return hash(str(self))
 
-    def all_nodes_exact(self):
-        thisList = [self]
+    def all_nodes_exact(self, parent=None, is_left_from_parent=None):
+        self.parent = parent
+        self.is_left_from_parent = is_left_from_parent
+        this_list = [self]
         if self.arity==0:
-            return thisList
+            return this_list
         elif self.arity==1:
-            return thisList+self.left.all_nodes_exact()
+            return this_list+self.left.all_nodes_exact(parent=self, is_left_from_parent=True)
         elif self.arity==2:
-            return thisList+self.left.all_nodes_exact()+self.right.all_nodes_exact()
+            return this_list+self.left.all_nodes_exact(parent=self, is_left_from_parent=True)+self.right.all_nodes_exact(parent=self, is_left_from_parent=False)
         else:
             raise Exception("Arity greater than 2 is not allowed.")
+        
+    def random_isomorphic_rotation(self, probability, rand_gen:Random):
+        # x*(y*z) ==> (x*y)*z or (x*z)*y
+        # x+(y+z) ==> (x+y)+z or (x+z)+y
+        if type(self)==type(NodeMultiply()) or type(self)==type(NodePlus()):
+            if type(self.left)==type(self):
+                if rand_gen.random()<probability:
+                    tmp = self.left.left
+                    self.left.left = self.right
+                    self.right = tmp
+                    #print("1")
+                if rand_gen.random()<probability:
+                    tmp = self.left.right
+                    self.left.right = self.right
+                    self.right = tmp
+                    #print("2")
+            if type(self.right)==type(self):
+                if rand_gen.random()<probability:
+                    tmp = self.right.left
+                    self.right.left = self.left
+                    self.left = tmp
+                    #print("3")
+                if rand_gen.random()<probability:
+                    tmp = self.right.right
+                    self.right.right = self.left
+                    self.left = tmp
+                    #print("4")
+        return self
+
 
     def size(self):
-        leftSize = 0
+        left_size = 0
         if self.left!=None:
-            leftSize = self.left.size()
-        rightSize = 0
+            left_size = self.left.size()
+        right_size = 0
         if self.right!=None:
-            rightSize = self.right.size()
-        return 1+leftSize+rightSize
+            right_size = self.right.size()
+        self_size = 1
+        # ugly constant penalization
+        if type(self)==type(NodeConstant(0)) and self.value!=round(self.value, 2):
+            #print("Ugly coef "+str(self.value))
+            self_size = 1
+        #else:
+            #print("Nice coef "+str(self.value))
+        return self_size+left_size+right_size
+    
+    def size_non_linear(self):
+        left_size = 0
+        if self.left!=None:
+            left_size = self.left.size_non_linear()
+        right_size = 0
+        if self.right!=None:
+            right_size = self.right.size_non_linear()
+        # counting the level of non-linearity, so excluding terms and operations plus and minus
+        if type(self)!=type(NodeConstant(0)) and type(self)!=type(NodeVariable(0)) and type(self)!=type(NodePlus) and type(self)!=type(NodeMinus):
+            return 1+left_size+right_size
+        else:
+            return left_size+right_size
+        
+    def size_operators_only(self):
+        left_size = 0
+        if self.left!=None:
+            left_size = self.left.size_operators_only()
+        right_size = 0
+        if self.right!=None:
+            right_size = self.right.size_operators_only()
+        # not counting terms
+        if type(self)!=type(NodeConstant(0)) and type(self)!=type(NodeVariable(0)):
+            return 1+left_size+right_size
+        else:
+            return left_size+right_size
 
-    def contains_type(self, searchType):
-        if type(self)==searchType:
+    def contains_type(self, search_type):
+        if type(self)==search_type:
             return True
-        if self.left!=None and self.left.contains_type(searchType):
+        if self.left!=None and self.left.contains_type(search_type):
             return True
-        if self.right!=None and self.right.contains_type(searchType):
+        if self.right!=None and self.right.contains_type(search_type):
             return True
         return False
 
-    def normalize_constants(self):
+    def normalize_constants(self, parent=None):
         if type(self)==type(NodeConstant(0)):
-            self.value = 1
+            if parent==None or type(parent)==type(NodePlus()) or type(parent)==type(NodeMinus()):
+                self.value = 0
+            elif parent==None or type(parent) == type(NodeMultiply()) or type(parent)==type(NodeDivide()):
+                self.value = 1
+            #elif type(parent)==type(NodePow()) and self.value!=0.5 and self.value!=-0.5:
+            #        self.value = round(self.value)
             return
         if self.arity>=1:
-            self.left.normalize_constants()
+            self.left.normalize_constants(self)
         if self.arity>=2:
-            self.right.normalize_constants()
+            self.right.normalize_constants(self)
 
 class NodeConstant(Node):
     def __init__(self, value):
         super().__init__()
         self.arity = 0
-        self.value = round(value,13)
+        self.value = value #round(value,13)
 
     def evaluate_inner(self,X, a, b):
         return self.value
@@ -156,7 +208,7 @@ class NodeVariable(Node):
         return X[self.index]
 
     def __str__(self):
-        return "v"+str(self.index)
+        return "x"+str(self.index)
 
 class NodePlus(Node):
     def __init__(self):
@@ -212,14 +264,13 @@ class NodeMinus(Node):
     def __str__(self):
         return "("+str(self.left)+"-"+str(self.right)+")"
 
-
 class NodeMultiply(Node):
     def __init__(self):
         super().__init__()
         self.arity = 2
 
     def evaluate_inner(self,X, a, b):
-        return a*b
+        return  a*b
 
     def is_allowed_left_argument(self, node_arg):
         if node_arg == NodeConstant(1):
@@ -247,7 +298,6 @@ class NodeDivide(Node):
         if self.right == node_arg:
             return False
         return True
-
 
     def is_allowed_right_argument(self, node_arg):
         if node_arg == NodeConstant(0):
@@ -297,6 +347,8 @@ class NodePow(Node):
     def is_allowed_right_argument(self, node_arg):
         if type(node_arg)!=type(NodeConstant(0)):
             return False
+        if node_arg.value!=0.5 and node_arg.value!=-0.5 and node_arg.value!=round(node_arg.value):
+            return False
         return True
 
     def is_allowed_left_argument(self, node_arg):
@@ -308,6 +360,18 @@ class NodePow(Node):
 
     def __str__(self):
         return "pow("+str(self.left)+","+str(self.right)+")"
+
+
+class NodeIdentity(Node):
+    def __init__(self):
+        super().__init__()
+        self.arity = 1
+
+    def evaluate_inner(self,X, a, b):
+        return a
+
+    def __str__(self):
+        return str(self.left)
 
 class NodeCos(Node):
     def __init__(self):
@@ -364,8 +428,8 @@ class NodeTan(Node):
         super().__init__()
         self.arity = 1
 
-    def is_allowed_left_argument(self, nodeArg):
-        if type(nodeArg) == type(NodeConstant(0)) and (nodeArg.value<-1 or nodeArg.value>1):
+    def is_allowed_left_argument(self, node_arg):
+        if type(node_arg) == type(NodeConstant(0)) and (node_arg.value<-1 or node_arg.value>1):
             return False
         return True
 
@@ -413,12 +477,30 @@ class NodeExp(Node):
         return exp(a)
 
     def is_allowed_left_argument(self, node_arg): # avoid complicated expressions
-        if node_arg.contains_type(type(NodeCos())) or node_arg.contains_type(type(NodeSin())) or node_arg.contains_type(type(NodeArcSin())) or node_arg.contains_type(type(NodeArcCos())) or node_arg.contains_type(type(NodeExp())) or node_arg.contains_type(type(NodeLn())):
+        if node_arg.contains_type(type(NodeExp())):
+            return False
+        #if node_arg.contains_type(type(NodeCos())) or node_arg.contains_type(type(NodeSin())) or node_arg.contains_type(type(NodeArcSin())) or node_arg.contains_type(type(NodeArcCos())) or node_arg.contains_type(type(NodeExp())) or node_arg.contains_type(type(NodeLn())) or node_arg.contains_type(type(NodePow())):
+        #    return False
+        return True
+        
+    def __str__(self):
+        return "exp("+str(self.left)+")"
+    
+class NodeGauss(Node):
+    def __init__(self):
+        super().__init__()
+        self.arity = 1
+
+    def evaluate_inner(self,X, a, b):
+        return exp(-a*a)
+
+    def is_allowed_left_argument(self, node_arg): # avoid complicated expressions
+        if node_arg.contains_type(type(NodeExp())):
             return False
         return True
 
     def __str__(self):
-        return "exp("+str(self.left)+")"
+        return "exp(-pow("+str(self.left)+",2))"
 
 class NodeLn(Node):
     def __init__(self):
@@ -577,3 +659,4 @@ class NodeDec(Node):
 
     def __str__(self):
         return "("+str(self.left)+"-1)"
+    
