@@ -11,10 +11,10 @@ We also recommend using pip package manager.
 2. Install the following pip packages:
 
 ```console
-$ pip install numpy
-$ pip install sympy
-$ pip install scikit-learn
-$ pip install statsmodels
+pip install numpy
+pip install sympy
+pip install scikit-learn
+pip install statsmodels
 ```
 
 # Execution instructions
@@ -36,9 +36,9 @@ python run.py "instances/srbench_2023" "dataset_3.txt" 180 20
 3. The steps in the execution pipeline are explained in paper/rils_gecco2023.pdf. 
 Briefly, several output files will occurr during execution:
 
-a) best_sols_dataset_{1|2|3}.txt
-b) log.txt
-c) out.txt
+    1. best_sols_dataset_{1|2|3}.txt
+    2. log.txt
+    3. out.txt
 
 The model will be written inside out.txt.
 Note that there is semi-automated (interactive) simplification (step 4 in the paper) for the dataset_3. 
