@@ -1,8 +1,6 @@
 import math
-from random import Random
 import time
 from sklearn.base import BaseEstimator
-import copy
 from sympy import *
 from .node import Node
 from .rils import RILSRegressor, FitnessType
@@ -15,7 +13,7 @@ warnings.filterwarnings("ignore")
 
 class RILSEnsembleRegressor(BaseEstimator):
 
-    def __init__(self, epochs=100, fit_calls_per_epoch=100000, fitness_type=FitnessType.DEFAULT, complexity_penalty=0.001, initial_sample_size=1,target_size=20, parallelism = 8,first_improvement=True,verbose=False, random_state=0):
+    def __init__(self, epochs=100, fit_calls_per_epoch=100000, max_seconds_per_epoch=10000, fitness_type=FitnessType.EXPERIMENTAL, complexity_penalty=0, initial_sample_size=1,parallelism = 10,simplification=True, first_improvement=True, change_ignoring=False, target_size=20,verbose=False,  random_state=0):
         self.fit_calls_per_epoch = fit_calls_per_epoch
         self.complexity_penalty = complexity_penalty
         self.random_state = random_state
@@ -24,19 +22,25 @@ class RILSEnsembleRegressor(BaseEstimator):
         self.fitness_type = fitness_type
         self.initial_sample_size = initial_sample_size
         self.first_improvement = first_improvement
+        self.simplification = simplification
+        self.change_ignoring = change_ignoring
         self.target_size = target_size
         self.epochs = epochs
-        self.base_regressors = [RILSRegressor(max_fit_calls=fit_calls_per_epoch, fitness_type=fitness_type, 
-                                                  complexity_penalty=complexity_penalty, initial_sample_share=initial_sample_size, 
-                                                  first_improvement=first_improvement,target_size=target_size,
-                                                  verbose=verbose, random_state=i) 
+        self.best_solutions = []
+        # TODO: i takes values from 0...self.parallelism before which was not good because random_state=0 is special -- it is not good for reproducibility
+        self.base_regressors = [RILSRegressor(max_fit_calls=fit_calls_per_epoch, max_seconds=max_seconds_per_epoch, fitness_type=fitness_type, 
+                                                  complexity_penalty=complexity_penalty, initial_sample_size=initial_sample_size, 
+                                                  first_improvement=first_improvement, simplification = simplification, change_ignoring=change_ignoring,
+                                                  target_size = target_size, verbose=verbose, random_state=i) 
                                                   for i in range(self.parallelism)]
 
-    def fit(self, X, y, init_sympy_sol_str = "0", X_test = None, y_test = None):
+    def fit(self, X, y, init_sympy_sol_str = "0", dataset_file="", X_test = None, y_test = None):
         # now run each base regressor (RILSROLSRegressor) as a separate process
         self.start = time.time()
-        self.relevant_model = None
-        self.relevant_model_simp = None
+        if init_sympy_sol_str=="0":
+            # when starting with some specific sympy_sol, it means that best solutions w.r.t. increasing target sizes should not be tracked
+            with open("best_sols_"+dataset_file, "w") as f:
+                f.write("")
         epoch = 0
         sympy_sol_str = init_sympy_sol_str
         all_time_best_fit = None
@@ -49,10 +53,6 @@ class RILSEnsembleRegressor(BaseEstimator):
             for model, model_simp in results:
                 model_fit = self.base_regressors[i].fitness(model, X,y, cache=False)
                 if self.base_regressors[i].compare_fitness(model_fit, best_fit)<0:
-                    if model_fit[0]>=best_fit[0]+0.01:
-                        # R2 of new model is at least 1% better than previous -- this is done in order to avoid improvements to very complex models with marginal improvement in R2
-                        self.relevant_model = copy.deepcopy(model)
-                        self.relevant_model_simp = copy.deepcopy(model_simp)
                     best_fit = model_fit
                     best_model = model
                     best_model_simp = model_simp
@@ -70,6 +70,10 @@ class RILSEnsembleRegressor(BaseEstimator):
             self.model_simp = best_model_simp
             sympy_sol_str = str(self.model_simp)
             print('EPOCH '+str(epoch)+'. BEST: '+str(best_fit)+'\t'+sympy_sol_str)
+            if init_sympy_sol_str=="0":
+                with open("best_sols_"+dataset_file, "a") as f:
+                    f.write(str(best_fit[0])+":"+sympy_sol_str+"\n")
+            self.best_solutions.append((best_fit[0], sympy_sol_str))
             with open("log.txt", "a") as f:
                 output_string =  self.fit_report_string(X, y)
                 f.write("epoch "+str(epoch)+" "+output_string+"\n")
@@ -94,13 +98,11 @@ class RILSEnsembleRegressor(BaseEstimator):
         if self.model==None:
             raise Exception("Model is not build yet. First call fit().")
         fitness = self.base_regressors[0].fitness(self.model,X,y, cache=False)
-        fitness_relevant = fitness = self.base_regressors[0].fitness(self.relevant_model,X,y, cache=False)
-        return "epochs={0}\tsec={1:.1f}\ttarget_size={2}\tR2={3:.7f}\tRMSE={4:.7f}\tsize={5}\tR2Rel={6:.7f}\tRMSERel={7:.7f}\tsizeRel={8}\texprSimp={9}\texprSimpRel={10}\t".format(
-            self.epochs,time.time()-self.start,self.target_size, fitness[0], fitness[1], self.complexity(self.model_simp), fitness_relevant[0], fitness_relevant[1], 
-            self.complexity(self.relevant_model_simp), self.model_simp, self.relevant_model_simp)
+        return "epochs={0}\tmaxFitCalls={1}\tseed={2}\tsizePenalty={3}\tR2={4:.7f}\tRMSE={5:.7f}\tsize={6}\tsec={7:.1f}\tmainIt={8}\tlsIt={9}\tfitCalls={10}fitType={11}\tsample_size={12}\tfirstImpr={13}\tsimplification={14}\tchangeIgnore={15}\ttarget_size={16}\texpr={17}\texprSimp={18}\t".format(
+            self.epochs,self.fit_calls_per_epoch,self.random_state,self.complexity_penalty, fitness[0], fitness[1], self.complexity(), time.time()-self.start, 0, 0,Solution.fit_calls, self.fitness_type, self.initial_sample_size, self.first_improvement, self.simplification, self.change_ignoring, self.target_size, self.model, self.model_simp)
 
-    def complexity(self, model):
+    def complexity(self):
         c=0
-        for _ in preorder_traversal(model):
+        for arg in preorder_traversal(self.model_simp):
             c += 1
         return c

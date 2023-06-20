@@ -1,6 +1,6 @@
 from abc import abstractmethod
 import copy
-from math import acos, asin, atan, ceil, cos, exp, floor, log, sin, sqrt, tan, pi, e
+from math import acos, asin, atan, ceil, cos, exp, floor, log, sin, sqrt, tan, pi, e, tanh
 from random import Random
 
 class Node:
@@ -282,7 +282,7 @@ class NodeMultiply(Node):
 
     def __str__(self):
         return "("+str(self.left)+"*"+str(self.right)+")"
-
+    
 class NodeDivide(Node):
     def __init__(self):
         super().__init__()
@@ -467,6 +467,17 @@ class NodeArcTan(Node):
 
     def __str__(self):
         return "atan("+str(self.left)+")"
+    
+class NodeTanh(Node):
+    def __init__(self):
+        super().__init__()
+        self.arity = 1
+
+    def evaluate_inner(self,X, a, b):
+        return tanh(a)
+
+    def __str__(self):
+        return "tanh("+str(self.left)+")"
 
 class NodeExp(Node):
     def __init__(self):
@@ -508,8 +519,8 @@ class NodeLn(Node):
         self.arity = 1
 
     def evaluate_inner(self,X, a, b):
-        if a==0:
-            a = Node.VERY_SMALL
+        #if a==0:
+        #    a = Node.VERY_SMALL
         return log(a)#abs(a))
 
     def is_allowed_left_argument(self, node_arg):

@@ -1,13 +1,14 @@
 import copy
 from math import e, inf
 import time
-from .node import NodeAbs, NodeArcCos, NodeArcSin, NodeArcTan, NodeCeil, NodeConstant, NodeCos, NodeExp, NodeFloor, NodeLn, NodeMax, NodeMin, NodeMultiply, NodePlus, NodePow, NodeSgn, NodeSin, NodeTan, NodeVariable
+from .node import NodeAbs, NodeArcCos, NodeArcSin, NodeArcTan, NodeCeil, NodeConstant, NodeCos, NodeExp, NodeFloor, NodeLn, NodeMax, NodeMin, NodeMultiply, NodePlus, NodePow, NodeSgn, NodeSin, NodeTan, NodeTanh, NodeVariable
 from sympy import *
 from sympy.core.numbers import ImaginaryUnit
 from sympy.core.symbol import Symbol
 import numpy as np
 import statsmodels.api as sma
 import hashlib
+from scipy.linalg import lstsq
 from scipy.stats import pearsonr
 from operator import add
 
@@ -393,6 +394,8 @@ class Solution:
                 new = NodeArcSin()
             elif type(sympy_node)==atan:
                 new = NodeArcTan()
+            elif type(sympy_node)==tanh:
+                new = NodeTanh()
             elif type(sympy_node)==log:
                 new = NodeLn()
             elif type(sympy_node).__name__=="sgn":
@@ -408,6 +411,7 @@ class Solution:
             elif type(sympy_node)==im:
                 return NodeConstant(0) # not doing with imaginary numbers
             else:
+                print("Non defined node "+str(sympy_node))
                 raise Exception("Non defined node "+str(sympy_node))
             new.left = sub_nodes[0]
             return new
