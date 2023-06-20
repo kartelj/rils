@@ -42,5 +42,3 @@ Briefly, several output files will occurr during execution:
 
 The model will be written inside out.txt.
 Note that there is semi-automated (interactive) simplification (step 4 in the paper) for the dataset_3. 
-
-4. The execution might be lengthy so we provide all these prevously obtained product files inside the results/ directory. 
