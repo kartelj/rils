@@ -30,7 +30,7 @@
 
 \begin{abstract} % abstract
 We describe a program pipeline for solving symbolic regression problems. The main element of this pipeline is the sequential search algorithm based on Iterated Local Search. The main components of the algorithm are a carefully designed local search procedure and the incremental solution construction, i.e., the search that iteratively increases the limit of the expression size. The sequential algorithm (base regressor) is later used in a parallel environment in the form of an ensemble of regressors.
-After additional post-processing of the results obtained by the ensemble, we report the following results: \texttt{dataset\_1} ($R^2$=0.8387, size=56), \texttt{dataset\_2} ($R^2$=0.9547, size=17) and \texttt{dataset\_3} ($R^2$=0.9789, size=57).
+After additional post-processing of the results obtained by the ensemble, we report the following results: \texttt{dataset\_1} ($R^2$=0.8385, size=55), \texttt{dataset\_2} ($R^2$=0.9547, size=17) and \texttt{dataset\_3} ($R^2$=0.9789, size=43).
 \end{abstract}
 
 \keywords{symbolic regression, iterated local search, incremental construction, GECCO 2023, competition}
@@ -140,7 +140,7 @@ The entire RILS pipeline is adapted to competition datasets and therefore cannot
     \item The last step is the semi-automatic simplification. We use the method \texttt{nsimplify} from the package \texttt{Sympy}~\cite{sympy}) to approximately unify similar coefficients (if this change does not significantly worsen $R^2$). This step also includes ad-hoc simplifications that are clearly visible to the naked eye but difficult for a program to detect. This simplification was only useful in the case of \texttt{dataset\_3} and will be discussed in more detail in this section.
 \end{enumerate}
 
-The program is implemented in Python 3.11.3, but should also work with other relatively recent versions of Python 3. All experiments on our method are performed in multi-core mode on a PC with Intel i9-9900KF CPU @3.6GHz, 64GB RAM, running Windows 10 Pro OS. All codes, datasets and instructions for reproducing the results are available at: \\ \url{https://github.com/ufabc-bcc/srbench-competition-2023-track-1-sarma/tree/main/datasets}.
+The program is implemented in Python 3.11.3, but should also work with other relatively recent versions of Python 3. All experiments on our method are performed in multi-core mode on a PC with Intel i9-9900KF CPU @3.6GHz, 64GB RAM, running Windows 10 Pro OS. All codes, datasets and instructions for reproducing the results are available at: \\ \url{https://github.com/ufabc-bcc/srbench-competition-2023-track-1-sarma/}.
 
 \section{Experimental results}
 
@@ -164,7 +164,7 @@ The final results are shown in Table~\ref{tab:results}. They are obtained by eva
       \end{aligned}
       \end{equation}
       }
-      & 0.8387 & 56 \\ \hline
+      & 0.8385 & 55 \\ \hline
       \texttt{dataset\_2}  & 
       \parbox{10cm}{
       \begin{equation}
@@ -181,12 +181,12 @@ The final results are shown in Table~\ref{tab:results}. They are obtained by eva
       &+ \sin(10\cdot \ln(x_6)) +  \sin(10\cdot \ln(x_7)) + \sin(10\cdot \ln(x_{10})) + \sin(10\cdot \ln(x_{11})))/8
       \end{aligned}
       \end{equation}}
-       & 0.9789 & 57\\ \hline
+       & 0.9789 & 43\\ \hline
     \end{tabular}
     \label{tab:results}
 \end{table}
 
-Figure~\ref{fig:fig_tradeoff} shows the solution sets obtained after step 1 of the RILS pipeline (on training data, i.e., 1500 data points). We will now focus only on \texttt{dataset\_3}, since the other two data sets are fully automated and they give the given results without step 4 of the RILS pipeline.
+Figure~\ref{fig:fig_tradeoff} shows the solution sets obtained after step 1 of the RILS pipeline (on training data, i.e., 1500 data points). We will now focus only on \texttt{dataset\_3}, since the other two data sets are fully automated and they give the presented results without step 4 of the RILS pipeline.
 
 In Step 2, the best trade-off solution for \texttt{dataset\_3} is selected that achieves (size, $R^2$)=(119, 0.9766). This solution is reduced in step 3 to a solution with (size, $R^2$)=(91, 0.9724), which has the following structure:
 
@@ -201,16 +201,16 @@ In Step 2, the best trade-off solution for \texttt{dataset\_3} is selected that 
 \end{aligned}
 \end{equation}
 
-From then on, it was clear that all factors were multiplied by a number of 0.125 (1/8), and that the total expression was an average of $\{\sin(10\cdot \ln(x_i) \mid i \in \{0, 1, 4, 5, 6, 7, 10, 11\}\}$. Thus, by using \texttt{nsimplify} we have further simplified the expression into its final form:
+From then on, we used the \texttt{nsimplify} method in interactive mode to further simplify the expression. First, it became clear that all factors were multiplied by a number of 0.125 (1/8), which is very close to the average coefficient in all linear terms. Then, all $cos$ were converted to $sin$, while the subexpression $-0.125 \cdot \sin(\ln(x_7^{-10}))$ was converted to $0.125 \cdot \sin(10\ln(x_7))$. Finally, using the notion of self-similarity in linear terms, we were able to convert the complicated expressions with variables $x_0$ and $x_4$ inside the former $cos$ terms to $10 \cdot \ln(x_0)$ and $10 \cdot ln(x_4)$, respectively, leading to the final form of the solution:
 
 \begin{equation}
 \nonumber
 \begin{aligned}
-\frac{\sin(10 \ln(x_0))+ \sin(10 \ln(x_1)) + \sin(10 \ln(x_4)) + \sin(10 \ln(x_5)) \sin(10 \ln(x_6)) +  \sin(10 \ln(x_7)) + \sin(10 \ln(x_{10})) + \sin(10 \ln(x_{11}))}{8}.
+\frac{\sin(10 \ln(x_0))+ \sin(10 \ln(x_1)) + \sin(10 \ln(x_4)) + \sin(10 \ln(x_5)) +\sin(10 \ln(x_6)) +  \sin(10 \ln(x_7)) + \sin(10 \ln(x_{10})) + \sin(10 \ln(x_{11}))}{8}.
 \end{aligned}
 \end{equation}
 
-This simplification also led to an improvement in terms of $R^2$, so that the final model is (size, $R^2$)=(57, 0.9789). The size appears to be large (57), but this is due to the fact that the \texttt{sympify} method of the \texttt{Sympy} package automatically converts the given expression into an expanded form: $0.125 \cdot \sin(10 \ln(x_0))+ 0.125 \cdot \sin(10 \ln(x_1)) + ... + 0.125 \cdot \sin(10 \ln(x_{11}))$.
+This simplification also led to an improvement in terms of $R^2$, so that the final model is (size, $R^2$)=(43, 0.9789).
 
 \begin{figure}[ht]
 \begin{subfigure}{.5\textwidth}
