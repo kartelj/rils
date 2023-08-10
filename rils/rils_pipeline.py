@@ -9,9 +9,17 @@ from rils.solution import Solution
 
 class RILSPipelineRegressor(BaseEstimator):
 
-    def __init__(self, epochs=100, fit_calls_per_epoch=100000, max_seconds_per_epoch=10000, initial_sample_size=1,parallelism = 10, init_target_size=20,verbose=False,  random_state=0):
-        self.inner_ensemble = RILSEnsembleRegressor(epochs=epochs, fit_calls_per_epoch=fit_calls_per_epoch, max_seconds_per_epoch=max_seconds_per_epoch, initial_sample_size=initial_sample_size, parallelism=parallelism, target_size=init_target_size, verbose=verbose, random_state=random_state)
-        
+    def __init__(self, epochs=100, fit_calls_per_epoch=100000, max_seconds_per_epoch=10000, initial_sample_size=1,parallelism = 10, initial_target_size=20,verbose=False,  random_state=0):
+        self.inner_ensemble = RILSEnsembleRegressor(epochs=epochs, fit_calls_per_epoch=fit_calls_per_epoch, max_seconds_per_epoch=max_seconds_per_epoch, initial_sample_size=initial_sample_size, parallelism=parallelism, target_size=initial_target_size, verbose=verbose, random_state=random_state)
+        self.fit_calls_per_epoch = fit_calls_per_epoch
+        self.max_calls_per_epoch = max_seconds_per_epoch
+        self.random_state = random_state
+        self.parallelism = parallelism
+        self.verbose = verbose
+        self.initial_sample_size = initial_sample_size
+        self.epochs = epochs
+        self.init_target_size = initial_target_size
+
     def fit(self, X, y, init_sympy_sol_str = "0", dataset_file="", X_test = None, y_test = None):
         self.inner_ensemble.fit(X, y ,init_sympy_sol_str=init_sympy_sol_str, dataset_file=dataset_file, X_test=X_test, y_test=y_test)
         best_tradeoff_sympy_sol = self.select_best_tradeoff_solution()

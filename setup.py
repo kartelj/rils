@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name='rils',
-    version='0.3',
+    version='0.4',
     description='Regression via Iterated Local Search for Symbolic Regression GECCO Competition -- 2023',
     long_description= long_description,
     long_description_content_type  = "text/markdown",
