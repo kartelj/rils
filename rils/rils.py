@@ -40,6 +40,7 @@ class FitnessType(Enum):
     DIFF_RMSE = 18
     DIST_DIFF = 19
     EXPERIMENTAL = 20
+    EXPERIMENTAL2 = 21
 
 class RILSRegressor(BaseEstimator):
 
@@ -714,6 +715,10 @@ class RILSRegressor(BaseEstimator):
                 if size<self.target_size:
                     size = self.target_size
                 final = (2-r2)*size
+            elif self.fitness_type == FitnessType.EXPERIMENTAL2:
+                if size<self.target_size:
+                    size = self.target_size
+                final = (2-r2)*(1+rmse)*size
             else:
                 raise Exception("Unrecognized fitness type "+str(self.fitness_type))
             result = (r2, rmse, size, final, diff_r2, diff_rmse, dist_diff, p_val_norm_res, p_val_same_dist)
