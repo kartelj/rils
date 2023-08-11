@@ -15,6 +15,7 @@ class RILSPipelineRegressor(BaseEstimator):
         self.inner_ensemble = RILSEnsembleRegressor(epochs=epochs, fit_calls_per_epoch=fit_calls_per_epoch, max_seconds_per_epoch=max_seconds_per_epoch, fitness_type=fitness_type, initial_sample_size=initial_sample_size, parallelism=parallelism, target_size=initial_target_size, verbose=verbose, random_state=random_state)
         self.fit_calls_per_epoch = fit_calls_per_epoch
         self.max_seconds_per_epoch = max_seconds_per_epoch
+        self.fitness_type = fitness_type
         self.random_state = random_state
         self.parallelism = parallelism
         self.verbose = verbose
