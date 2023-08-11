@@ -2,6 +2,7 @@
 import math
 from sklearn.base import BaseEstimator
 from sympy import preorder_traversal, sympify
+from rils.rils import FitnessType
 
 from rils.rils_ensemble import RILSEnsembleRegressor
 from rils.solution import Solution
@@ -10,8 +11,8 @@ from rils.node import Node
 
 class RILSPipelineRegressor(BaseEstimator):
 
-    def __init__(self, epochs=100, fit_calls_per_epoch=100000, max_seconds_per_epoch=10000, initial_sample_size=1,parallelism = 10, initial_target_size=20,verbose=False,  random_state=0):
-        self.inner_ensemble = RILSEnsembleRegressor(epochs=epochs, fit_calls_per_epoch=fit_calls_per_epoch, max_seconds_per_epoch=max_seconds_per_epoch, initial_sample_size=initial_sample_size, parallelism=parallelism, target_size=initial_target_size, verbose=verbose, random_state=random_state)
+    def __init__(self, epochs=100, fit_calls_per_epoch=100000, max_seconds_per_epoch=10000, fitness_type = FitnessType.EXPERIMENTAL, initial_sample_size=1,parallelism = 10, initial_target_size=20,verbose=False,  random_state=0):
+        self.inner_ensemble = RILSEnsembleRegressor(epochs=epochs, fit_calls_per_epoch=fit_calls_per_epoch, max_seconds_per_epoch=max_seconds_per_epoch, fitness_type=fitness_type, initial_sample_size=initial_sample_size, parallelism=parallelism, target_size=initial_target_size, verbose=verbose, random_state=random_state)
         self.fit_calls_per_epoch = fit_calls_per_epoch
         self.max_seconds_per_epoch = max_seconds_per_epoch
         self.random_state = random_state
